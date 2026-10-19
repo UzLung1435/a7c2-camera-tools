@@ -19,9 +19,16 @@ sys.path.insert(0, str(ROOT / "core"))
 sys.path.insert(0, str(ROOT / "core" / "sony-service-research"))
 import service_probe as original
 import windows_libusb
+import windows_pnp
 
 
 def windows_devices():
+    """Full PowerShell inventory, for receipts that must show raw WMI state.
+
+    Every binding *decision* is made by require_winusb() from the registry and
+    the configuration manager instead: this call costs 10-45 s on a host whose
+    disk classes block on the camera's two LUNs.
+    """
     script = r'''
 $ErrorActionPreference='Stop'
 [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)
@@ -42,17 +49,127 @@ $disks=@(Get-CimInstance Win32_DiskDrive | Where-Object {
     return json.loads(result.stdout.decode("utf-8"))
 
 
+def camera_node(pid, serial):
+    return windows_pnp.node(windows_pnp.instance_id(pid, serial))
+
+
 def require_winusb(serial):
-    inventory = windows_devices()
-    expected = "USB\\VID_054C&PID_0E8A\\" + serial.upper()
-    active = [item for item in inventory["devices"]
-              if item["id"].upper() == expected]
-    if (len(active) != 1 or active[0]["status"] != "OK" or
-            str(active[0]["service"]).lower() != "winusb"):
+    """Hard gate: 0e8a attached, healthy, bound to WinUSB, no storage node.
+
+    Reads the configuration manager directly (~1 ms). The previous PowerShell
+    version took 10-45 s per call, which made the recovery poll loop useless
+    and blew step timeouts while the driver store was being rewritten.
+    """
+    node = camera_node("0E8A", serial)
+    if (node is None or not windows_pnp.healthy(node) or
+            str(node["service"] or "").upper() != "WINUSB"):
         raise original.ProbeError("target 0e8a must be present and bound to WinUSB")
-    if any(serial.upper() in disk.upper() for disk in inventory["disks"]):
+    disks = windows_pnp.storage_instances(serial)
+    if disks:
         raise original.ProbeError("camera storage disks remain present")
-    return inventory
+    return {"devices": [{"id": node["instance"], "service": node["service"],
+                         "status": "OK"}],
+            "disks": disks}
+
+
+def recovery_enumerate(self):
+    """Enumerate with the Windows mode-switch transients treated as "not yet".
+
+    Bound by every Windows step: WindowsBackend for this module's own child,
+    and windows_usb_adapter.install() for the p1/bk4/cp children. Those steps
+    used to carry a second, older copy of this method and of the verification
+    below, so a fix applied here never reached them.
+    """
+    if self.budget.recovering:
+        devices = list(self.usb_core.find(find_all=True, idVendor=original.VID,
+                                          backend=self.usb_backend))
+        if len(devices) > 1:
+            # A Windows mode switch briefly exposes the outgoing and the
+            # incoming device node at the same time, so two Sony devices for a
+            # few hundred milliseconds is a transient state, not an ambiguity.
+            # Aborting here turned a healthy restore into a hard failure right
+            # after the first unknown-PID observation; reporting "not settled
+            # yet" keeps recovery polling without ever operating on an
+            # unverified node.
+            self.log("recovery_reenumeration_overlap")
+            return None
+        if devices and devices[0].idProduct == self.expected_pid:
+            dev = devices[0]
+            ports = tuple(dev.port_numbers or ())
+            if dev.bus is None or not ports:
+                # Same transient class: the port chain is not readable while
+                # the node is being rebuilt.
+                self.log("recovery_port_identity_pending")
+                return None
+            # Descriptor reads through the old libusb process can return
+            # ACCESS after a Windows WinUSB rebind. The fresh PID/address, port
+            # and PnP binding are checked here; a new process checks the active
+            # interface descriptor before success is reported.
+            return {"device": dev, "pid": dev.idProduct, "bus": dev.bus,
+                    "ports": ports, "address": dev.address,
+                    "interface": None, "class": original.MSC_CLASS}
+    try:
+        return original.UsbBackend.enumerate(self)
+    except Exception as exc:
+        # Windows can invalidate a descriptor handle between libusb's device
+        # list and configuration query during a PID change.
+        transitioning = (getattr(self, "windows_transitioning", False) or
+                         self.budget.recovering)
+        binding = ((getattr(exc, "backend_error_code", None) == -3 or
+                    isinstance(exc, NotImplementedError)) and transitioning)
+        # An unknown PID (the 096f intermediate seen while the camera rebuilds
+        # its storage side) is enumerated by the base class, which still
+        # requires a readable port chain. While that node is being created the
+        # chain is briefly empty, and raising here aborted the whole recovery
+        # even though the restore itself was healthy.
+        port_pending = (isinstance(exc, original.ProbeError) and
+                        "port identity unavailable" in str(exc) and
+                        transitioning)
+        if not original.is_gone(exc) and not binding and not port_pending:
+            raise
+        self.log("reenumeration_in_progress", error_type=type(exc).__name__,
+                 driver_binding=binding, port_identity_pending=port_pending)
+        return None
+
+
+def windows_verify_normal(self, info, initial_active):
+    """Confirm the camera is back as 0e8a with the WinUSB binding in place.
+
+    A changed USB address is NOT required. Windows reuses the same address
+    across a PID change on one port: this A7C II was observed at address 5 as
+    0e8a, 0336 and 096f in a single run, and back at 0e8a at address 5 again.
+    Requiring address != old rejected cameras that had restored correctly, and
+    the node/binding check is what actually proves the restore: the node only
+    resolves while the camera is attached, and only a re-enumerated 0e8a can be
+    bound to WinUSB after the service-mode release.
+    """
+    deadline = min(time.monotonic() + 30, self.budget.end)
+    last_error = "normal WinUSB binding not yet visible"
+    while time.monotonic() < deadline:
+        if info is not None and info["pid"] == self.expected_pid:
+            try:
+                require_winusb(self.windows_serial)
+            except original.ProbeError as exc:
+                last_error = str(exc)
+            else:
+                self.log("normal_winusb_verified", serial=self.windows_serial,
+                         address=info["address"],
+                         address_changed=(info["address"] !=
+                                          self.windows_initial_address))
+                return
+        time.sleep(0.2)
+        info = recovery_enumerate(self)
+    raise original.ProbeError("fresh normal WinUSB instance not verified: " +
+                              last_error)
+
+
+def windows_wait_service(self, initial, seconds=8.0):
+    """Windows needs longer than the POSIX default for a mode switch."""
+    self.windows_transitioning = True
+    try:
+        return original.UsbBackend.wait_service(self, initial, max(seconds, 15.0))
+    finally:
+        self.windows_transitioning = False
 
 
 class WindowsSession(original.ManagedSession):
@@ -82,21 +199,20 @@ class WindowsSession(original.ManagedSession):
 class WindowsBackend(original.UsbBackend):
     def __init__(self, *args, serial, **kwargs):
         super().__init__(*args, **kwargs)
+        self.windows_serial = serial
         self.serial = serial
-        self.transitioning = False
-        self.initial_address = None
+        self.windows_transitioning = False
+        self.windows_initial_address = None
 
     def check_target(self, info, initial=None, service=False):
         super().check_target(info, initial, service)
         if initial is None:
-            self.initial_address = info["address"]
+            self.windows_initial_address = info["address"]
 
-    def wait_service(self, initial, seconds=8.0):
-        self.transitioning = True
-        try:
-            return super().wait_service(initial, seconds)
-        finally:
-            self.transitioning = False
+    # Same implementations the adapter binds into the other Windows steps.
+    enumerate = recovery_enumerate
+    verify_normal_driver = windows_verify_normal
+    wait_service = windows_wait_service
 
     def open(self, info):
         self.require_known_pid(info)
@@ -104,61 +220,21 @@ class WindowsBackend(original.UsbBackend):
         self.sessions.append(session)
         return session.open()
 
-    def enumerate(self):
-        if self.budget.recovering:
-            devices = list(self.usb_core.find(find_all=True, idVendor=original.VID,
-                                              backend=self.usb_backend))
-            if len(devices) > 1:
-                raise original.ProbeError("multiple Sony USB devices during recovery")
-            if devices and devices[0].idProduct == self.expected_pid:
-                dev = devices[0]
-                ports = tuple(dev.port_numbers or ())
-                if dev.bus is None or not ports:
-                    raise original.ProbeError("normal USB port identity unavailable")
-                # Descriptor reads through the old libusb process can return
-                # ACCESS after a Windows WinUSB rebind. The fresh PID/address,
-                # port and PnP binding are checked here; a new process checks
-                # the active interface descriptor before success is reported.
-                return {"device": dev, "pid": dev.idProduct, "bus": dev.bus,
-                        "ports": ports, "address": dev.address,
-                        "interface": None, "class": original.MSC_CLASS}
-        try:
-            return super().enumerate()
-        except Exception as exc:
-            # Windows can invalidate a descriptor handle between libusb's
-            # device list and configuration query during a PID change.
-            binding = ((getattr(exc, "backend_error_code", None) == -3 or
-                        isinstance(exc, NotImplementedError)) and
-                       (self.transitioning or self.budget.recovering))
-            if not original.is_gone(exc) and not binding:
-                raise
-            self.log("reenumeration_in_progress", error_type=type(exc).__name__,
-                     driver_binding=binding)
-            return None
-
-    def verify_normal_driver(self, info, initial_active):
-        deadline = min(time.monotonic() + 20, self.budget.end)
-        last_error = "normal WinUSB binding not yet visible"
-        while time.monotonic() < deadline:
-            if info is not None and info["address"] != self.initial_address:
-                try:
-                    require_winusb(self.serial)
-                except original.ProbeError as exc:
-                    last_error = str(exc)
-                else:
-                    self.log("normal_winusb_verified", serial=self.serial,
-                             address=info["address"])
-                    return
-            time.sleep(0.15)
-            info = self.enumerate()
-            if info is None:
-                continue
-        raise original.ProbeError("fresh normal WinUSB instance not verified: " +
-                                  last_error)
-
 
 def verify_normal_in_new_process(serial, old_address):
-    deadline = time.monotonic() + 20
+    """Confirm normal MSC mode from a fresh process.
+
+    A changed USB address is NOT required. Windows reuses the same address
+    across a PID change on one port: an A7C II was observed at address 5 as
+    0e8a, 0336 and 096f in a single run, and back at 0e8a again as address 5.
+    Requiring address != old therefore rejected cameras that had restored
+    correctly. Freshness comes from two independent facts instead: the PnP
+    node check below proves the 0e8a instance exists and is bound to WinUSB,
+    and the child re-enumerates from scratch and reads 0e8a plus MSC class,
+    which no stale service-mode handle can report. old_address is kept only
+    for diagnostics.
+    """
+    deadline = time.monotonic() + 30
     while True:
         try:
             require_winusb(serial)
@@ -166,15 +242,15 @@ def verify_normal_in_new_process(serial, old_address):
         except original.ProbeError:
             if time.monotonic() >= deadline:
                 raise
-            time.sleep(0.25)
+            time.sleep(0.2)
     code = ("import sys,time,usb.core\n"
             "old=int(sys.argv[1])\n"
             "sys.path.insert(0,sys.argv[2])\n"
             "import windows_libusb\n"
             "backend=windows_libusb.get_backend()\n"
-            "for _ in range(80):\n"
+            "for _ in range(150):\n"
             " d=list(usb.core.find(find_all=True,idVendor=0x054c,backend=backend))\n"
-            " if len(d)==1 and d[0].idProduct==0x0e8a and d[0].address!=old:\n"
+            " if len(d)==1 and d[0].idProduct==0x0e8a:\n"
             "  try:\n"
             "   if d[0].get_active_configuration()[(0,0)].bInterfaceClass==8:\n"
             "    sys.exit(0)\n"
@@ -182,9 +258,10 @@ def verify_normal_in_new_process(serial, old_address):
             " time.sleep(0.2)\n"
             "sys.exit(3)\n")
     result = subprocess.run([sys.executable, "-c", code, str(old_address), str(ROOT)],
-                            timeout=22, capture_output=True)
+                            timeout=40, capture_output=True)
     if result.returncode:
-        raise original.ProbeError("new process could not verify restored MSC interface")
+        raise original.ProbeError(
+            "new process could not verify restored MSC interface")
 
 
 def main():

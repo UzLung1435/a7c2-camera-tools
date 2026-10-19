@@ -42,6 +42,20 @@ def save_json(path, value):
     temp.replace(path)
 
 
+def child_error(child):
+    """Last diagnostic the window/cleanup child printed, for the parent's error.
+
+    The child's own message is the only place the exact failing gate is named
+    (baseline, proof, chunk readback), and the parent used to drop it, leaving
+    the step log with nothing but "did not validate and save window".
+    """
+    for line in reversed((child.stderr + "\n" + child.stdout).splitlines()):
+        line = line.strip()
+        if line.startswith("error:"):
+            return ": " + line[len("error:"):].strip()
+    return ""
+
+
 def validate_window(out_dir, index, capture, previous):
     import p1_block_window_protocol_201 as wire
     meta_path = out_dir / f"window{index}.json"
@@ -80,6 +94,83 @@ def validate_window(out_dir, index, capture, previous):
     return meta
 
 
+def reset_stale_staging(serial):
+    """Delete this tool's own leftover window staging from the camera.
+
+    Window 0 may only start from an absent baseline, and neither the capture
+    nor p1_final_tmpfs_cleanup_201 removes the staged worker ELF and request.
+    A camera that already ran one capture therefore aborts window 0 before a
+    single write command, forever. The reset tool deletes exactly those two
+    paths and only after their bytes prove they are this worker's, so this is
+    a self-heal of our own leftovers, not a way around the gate.
+    """
+    service.emit("p1_stale_staging_reset", serial=serial)
+    # The reset tool is a standalone probe with its own two-process lifecycle
+    # (parent + service-mode child) that parses sys.argv, so it must run as its
+    # own process rather than being called in-process.
+    reset_script = (Path(__file__).resolve()
+                    .with_name("windows_p1_window_reset.py"))
+    try:
+        child = subprocess.run([sys.executable, str(reset_script),
+                                "--serial", serial, "--execute"],
+                               capture_output=True, text=True, encoding="utf-8",
+                               errors="replace", timeout=420)
+    except subprocess.TimeoutExpired as exc:
+        raise service.ProbeError(
+            "camera window staging reset timed out; replug the camera and retry"
+        ) from exc
+    print(child.stdout, end="", flush=True)
+    if child.stderr:
+        print(child.stderr, file=sys.stderr, end="", flush=True)
+    events = []
+    for line in child.stdout.splitlines():
+        try:
+            events.append(json.loads(line))
+        except json.JSONDecodeError:
+            pass
+    receipt = next((item for item in reversed(events)
+                    if item.get("event") == "windows_p1_window_reset"), None)
+    require(receipt is not None,
+            "camera window staging reset returned no receipt" + child_error(child))
+    require(receipt.get("product_verified") and receipt.get("reset_complete"),
+            "camera window staging could not be reset:" +
+            " deleted=" + str(receipt.get("deleted")) +
+            " ram=" + str(receipt.get("ram_before")) +
+            " request=" + str(receipt.get("request_before")) +
+            " child_code=" + str(receipt.get("child_code")))
+    target = next((item for item in events
+                   if item.get("event") == "target_verified"), None)
+    if target is not None:
+        verify_normal_in_new_process(serial, target["identity"]["address"])
+    stale = receipt.get("stale_request")
+    if not isinstance(stale, dict):
+        stale = {}
+    service.emit("p1_stale_staging_reset_done", serial=serial,
+                 deleted=receipt.get("deleted"),
+                 stale_capture_id=stale.get("capture_id"),
+                 stale_window_index=stale.get("window_index"))
+
+
+def run_window_child(args, out_dir, index, capture, previous, log_name):
+    command = [sys.executable, str(Path(__file__).resolve()),
+               "--serial", args.serial, "--out-dir", str(out_dir),
+               "--execute", "--child", "--window", str(index),
+               "--capture-id", capture]
+    if previous:
+        command += ["--previous-manifest", previous]
+    child = subprocess.run(command, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=680)
+    (out_dir / log_name).write_text(child.stdout + child.stderr,
+                                    encoding="utf-8")
+    events = []
+    for line in child.stdout.splitlines():
+        try:
+            events.append(json.loads(line))
+        except json.JSONDecodeError:
+            pass
+    return child, events
+
+
 def run_parent(args, out_dir):
     import p1_block_window_protocol_201 as wire
     require_winusb(args.serial)
@@ -105,28 +196,31 @@ def run_parent(args, out_dir):
         if not (meta_path.exists() and data_path.exists()):
             require(not meta_path.exists() and not data_path.exists(),
                     "incomplete host window files; inspect before retry")
-            command = [sys.executable, str(Path(__file__).resolve()),
-                       "--serial", args.serial, "--out-dir", str(out_dir),
-                       "--execute", "--child", "--window", str(index),
-                       "--capture-id", capture]
-            if previous:
-                command += ["--previous-manifest", previous]
-            child = subprocess.run(command, capture_output=True, text=True,
-                                   encoding="utf-8", errors="replace", timeout=680)
-            log_path = out_dir / f"window{index}.log"
-            log_path.write_text(child.stdout + child.stderr, encoding="utf-8")
-            events = []
-            for line in child.stdout.splitlines():
-                try:
-                    events.append(json.loads(line))
-                except json.JSONDecodeError:
-                    pass
-            target = next((item for item in events
-                           if item.get("event") == "target_verified"), None)
-            require(target is not None, "p1 child never verified target")
-            verify_normal_in_new_process(args.serial, target["identity"]["address"])
-            require(any(item.get("event") == "windows_p1_window_saved" for item in events),
-                    "p1 child did not validate and save window")
+            attempt = 0
+            while True:
+                log_name = (f"window{index}.log" if attempt == 0 else
+                            f"window{index}.retry{attempt}.log")
+                child, events = run_window_child(args, out_dir, index, capture,
+                                                 previous, log_name)
+                target = next((item for item in events
+                               if item.get("event") == "target_verified"), None)
+                require(target is not None,
+                        "p1 child never verified target" + child_error(child))
+                verify_normal_in_new_process(args.serial,
+                                             target["identity"]["address"])
+                if any(item.get("event") == "windows_p1_window_saved"
+                       for item in events):
+                    break
+                # Window 0 is the only window with an absent-baseline gate, and
+                # a previous capture always leaves that baseline behind.
+                if (index == 0 and attempt == 0 and
+                        "baseline_file_present_or_unreadable" in
+                        (child.stdout + child.stderr)):
+                    reset_stale_staging(args.serial)
+                    attempt += 1
+                    continue
+                require(False, "p1 child did not validate and save window" +
+                        child_error(child))
         meta = validate_window(out_dir, index, capture, previous)
         require(meta["serial"] == args.serial,
                 "p1 window belongs to another camera")
@@ -225,7 +319,12 @@ def run_child(args, out_dir):
     require(backend.proof_verified and backend.collection_verified and
             all(row is not None for row in rows) and
             backend.manifest_fields is not None,
-            "camera p1 window proof or chunks incomplete")
+            "camera p1 window proof or chunks incomplete (proof=%s collection=%s "
+            "chunks=%d/%d manifest=%s probe_code=%s stop_reason=%s)" %
+            (backend.proof_verified, backend.collection_verified,
+             sum(row is not None for row in rows), len(rows),
+             backend.manifest_fields is not None, code,
+             getattr(backend, "stop_reason", None)))
     wire.verify_window(wire.CN1, rows, backend.manifest_fields)
     data_path = out_dir / f"window{args.window}.bin"
     meta_path = out_dir / f"window{args.window}.json"

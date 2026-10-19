@@ -49,8 +49,21 @@ $rows=@(foreach($disk in $disks){
 [pscustomobject]@{pnp_count=$pnp.Count; volumes=$rows} | ConvertTo-Json -Depth 4 -Compress
 '''
     script = "$serialNumber='" + serial.upper() + "'\n" + script
-    code = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive",
-                           "-Command", script], capture_output=True, timeout=40)
+    # The MSFT storage provider is slow on machines with a long USBSTOR
+    # history: Get-Disk alone has been measured at 25 s and Win32_DiskDrive at
+    # 46 s here, while the same query answers in a second on a clean host. A
+    # 40 s ceiling therefore reported a healthy camera as unmounted, so the
+    # budget is generous and one retry absorbs a cold provider on first touch.
+    for attempt in range(2):
+        try:
+            code = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive",
+                                   "-Command", script], capture_output=True,
+                                  timeout=180)
+            break
+        except subprocess.TimeoutExpired as exc:
+            if attempt:
+                raise ValueError("Windows 相机存储卷枚举超时（已重试）；"
+                                 "请断开 USB 约 10 秒再插回后重试") from exc
     require(code.returncode == 0,
             "Windows camera disk inventory failed: " +
             code.stderr.decode("utf-8", "replace")[:200])

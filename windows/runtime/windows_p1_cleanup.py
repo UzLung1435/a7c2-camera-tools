@@ -80,7 +80,8 @@ def main():
         receipt = next((item for item in reversed(events)
                         if item.get("event") == "windows_p1_cleanup"), None)
         require(target is not None and receipt is not None,
-                "cleanup child returned no complete receipt")
+                "cleanup child returned no complete receipt" +
+                capture.child_error(child))
         verify_normal_in_new_process(args.serial, target["identity"]["address"])
         require(receipt["product_verified"] and
                 (receipt["cleanup_complete"] or receipt["camera_manifest_absent"]),

@@ -72,9 +72,24 @@ def selected(manifest_path, audio=None):
                         report["source_audio_sha256"],
                         "selected custom audio changed")
     require(not output.is_symlink() and output.is_file() and
-            output.stat().st_size == sound.PACKAGE_SIZE and
-            firmware.sha_file(output) == report.get("output_sha256"),
-            "selected DAT full hash differs")
+            output.stat().st_size == sound.PACKAGE_SIZE,
+            "selected DAT is missing or has the wrong size: " + str(output))
+    actual = firmware.sha_file(output)
+    if actual != report.get("output_sha256"):
+        # A package that fails its own DEND CRC is damaged on disk, not merely
+        # a different build: the build is deterministic, so the only correct
+        # recovery is to rebuild it from the untouched official 2.01 DAT.
+        try:
+            firmware.parse_dat(output)
+        except ValueError as exc:
+            raise ValueError(
+                "selected DAT is corrupt (" + str(exc) + ") at " + str(output) +
+                "; hash " + actual[:16] + "... differs from the recorded " +
+                str(report.get("output_sha256"))[:16] +
+                "... - rebuild it from the official 2.01 DAT") from exc
+        raise ValueError(
+            "selected DAT full hash differs: " + actual +
+            " != " + str(report.get("output_sha256")) + " at " + str(output))
     return output, report["output_sha256"]
 
 

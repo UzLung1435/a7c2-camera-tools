@@ -53,7 +53,10 @@ ERROR_CODES = frozenset((
     "short_response_header", "sequence_mismatch", "payload_over_limit",
     "payload_length_mismatch", "product_status_rejected", "state_not_complete",
     "usb_transport_error", "inherited_probe_constraint", "interrupted",
-    "dependency_error",
+    "dependency_error", "recovery_ambiguous_devices",
+    "recovery_service_attempt_limit", "recovery_normal_bind_missing",
+    "recovery_port_changed", "recovery_target_mismatch",
+    "recovery_port_identity_pending", "recovery_transfer_limit",
 ))
 
 
@@ -86,7 +89,8 @@ def safe_logger(sink=base.emit):
     boolean = frozenset(("gone", "originally_active", "active", "initially_active",
                          "product_info_ok", "product_verified", "query_observed",
                          "mode_change_attempted", "normal_mode_and_driver_verified",
-                         "sequence_validated"))
+                         "sequence_validated", "driver_binding", "port_identity_pending",
+                         "address_changed", "started"))
 
     def log(event, **fields):
         result = {}

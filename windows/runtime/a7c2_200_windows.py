@@ -6,12 +6,14 @@ import ctypes
 from datetime import datetime
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import shutil
 import subprocess
 import sys
 import time
+import winreg
 
 import ui
 
@@ -121,7 +123,6 @@ def property_value(instance, key):
     script = ("$ErrorActionPreference='Stop'; "
               "$x=Get-PnpDeviceProperty -InstanceId $env:A7C2_DEVICE_ID "
               "-KeyName '" + key + "'; [Console]::Write($x.Data)")
-    import os
     env = dict(os.environ, A7C2_DEVICE_ID=instance)
     result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive",
                              "-Command", script], env=env, capture_output=True,
@@ -157,10 +158,14 @@ def save_driver(run_dir, serial):
 
 
 def ensure_winusb(run_dir, serial):
-    current, service, _ = pnp()
+    current, service, instance = pnp()
     require(current == serial, "连接的相机已变化")
+    if service in {"LIBUSBK", "LIBUSB0"}:
+        clear_driver_bindings(serial, instance)
+        current, service, _ = pnp()
+        require(current == serial, "连接的相机已变化")
     if service != "WINUSB":
-        require(service == "USBSTOR", "相机普通模式驱动不受支持")
+        require(service == "USBSTOR", "相机普通模式驱动不受支持：" + str(service))
         candidate = run_dir / "normal_winusb_driver" / "ilce-7cm2.inf"
         if not candidate.is_file():
             candidate = ROOT / "tools" / "normal_winusb_export" / "ilce-7cm2.inf"
@@ -219,17 +224,170 @@ def read_version_201(run_dir, serial, output):
         raise
 
 
+def driver_package_field(block, *names):
+    for name in names:
+        match = re.search(r"^\s*" + re.escape(name) + r"\s*:\s*(.+?)\s*$",
+                          block, re.M)
+        if match:
+            return match.group(1)
+    return ""
+
+
+def third_party_packages_0e8a():
+    """Published names of every Zadig-style package registered for 0E8A.
+
+    Zadig keeps one package per backend it was ever used with, so a single
+    camera can carry libwdi, libusbK and libusb-win32 entries at the same
+    time. Removing only the currently bound one lets the next package bind
+    immediately, so the device never falls back to USBSTOR and the exporter
+    never sees the card. Only libwdi-generated packages are matched, which
+    leaves Sony's own drivers (Imaging Edge Webcam etc.) untouched.
+    """
+    result = subprocess.run(["pnputil.exe", "/enum-drivers"],
+                            capture_output=True, text=True,
+                            encoding="mbcs", errors="replace", timeout=60)
+    require(result.returncode == 0, "无法枚举本机驱动包")
+    found = []
+    for block in re.split(r"\r?\n[ \t]*\r?\n", result.stdout):
+        if not re.search(r"VID_054C&PID_0E8A", block, re.I):
+            continue
+        provider = driver_package_field(block, "提供程序名称", "Provider Name")
+        published = driver_package_field(block, "发布名称", "Published Name")
+        if provider.lower() not in {"libwdi", "libusbk", "libusb-win32"}:
+            continue
+        if re.fullmatch(r"oem[0-9]+\.inf", published, re.I):
+            found.append(published)
+    return found
+
+
+_CFGMGR32 = None
+DN_HAS_PROBLEM = 0x00000400
+
+
+def cfgmgr32():
+    global _CFGMGR32
+    if _CFGMGR32 is None:
+        from ctypes import wintypes
+        lib = ctypes.WinDLL("cfgmgr32")
+        lib.CM_Locate_DevNodeW.argtypes = [ctypes.POINTER(wintypes.ULONG),
+                                           wintypes.LPCWSTR, wintypes.ULONG]
+        lib.CM_Locate_DevNodeW.restype = wintypes.ULONG
+        lib.CM_Get_DevNode_Status.argtypes = [ctypes.POINTER(wintypes.ULONG),
+                                              ctypes.POINTER(wintypes.ULONG),
+                                              wintypes.ULONG, wintypes.ULONG]
+        lib.CM_Get_DevNode_Status.restype = wintypes.ULONG
+        _CFGMGR32 = lib
+    return _CFGMGR32
+
+
+def device_binding(instance):
+    """Status and driver service of one PnP node, without spawning a process.
+
+    Driver-store churn (pnputil /delete-driver, rescans) makes a full WMI
+    enumeration block for tens of seconds, and even a healthy PowerShell probe
+    costs about ten seconds here - both are useless for watching a
+    re-enumeration that lasts a few seconds. CM_Get_DevNode_Status plus the
+    Enum key answer in about a millisecond, and a node that is absent, phantom
+    or still failed-install reports a problem code instead of a stale service.
+
+    Returns ("OK"|"ERROR", service) or None when the node cannot be read.
+    """
+    from ctypes import wintypes
+    lib = cfgmgr32()
+    node = wintypes.ULONG()
+    if lib.CM_Locate_DevNodeW(ctypes.byref(node), instance, 0):
+        return None
+    status = wintypes.ULONG()
+    problem = wintypes.ULONG()
+    if lib.CM_Get_DevNode_Status(ctypes.byref(status), ctypes.byref(problem),
+                                 node.value, 0):
+        return None
+    try:
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                            "SYSTEM\\CurrentControlSet\\Enum\\" + instance) as key:
+            service = str(winreg.QueryValueEx(key, "Service")[0]).upper()
+    except OSError:
+        service = ""
+    healthy = problem.value == 0 and not status.value & DN_HAS_PROBLEM
+    return ("OK" if healthy else "ERROR", service or None)
+
+
+def poll_service(serial, timeout=30.0):
+    """Bind state of this serial's 0E8A node, polled until it settles.
+
+    Returns the upper-cased service name, or None when the node is absent or
+    not in a healthy state. Every probe failure - including a node that is
+    mid-rebuild - is treated as "not settled yet" rather than as an error.
+    """
+    instance = "USB\\VID_054C&PID_0E8A\\" + serial.upper()
+    deadline = time.monotonic() + timeout
+    found = None
+    while True:
+        binding = device_binding(instance)
+        if binding is not None and binding[0] == "OK" and binding[1]:
+            found = binding[1]
+            if found == "USBSTOR":
+                return found
+        if time.monotonic() >= deadline:
+            return found
+        time.sleep(0.5)
+
+
+def clear_driver_bindings(serial, instance):
+    """Drop every Zadig package bound to 0E8A so USBSTOR can take the node.
+
+    Zadig leaves one package per backend it was ever used with, so deleting
+    only the currently bound one just hands the node to the next package.
+    The bound package is removed last, and anything still locked is retried
+    with /force. When the store is finally empty Windows re-enumerates the
+    camera as mass storage on its own; if the node keeps a stale binding we
+    delete the device node and rescan once.
+    """
+    packages = third_party_packages_0e8a()
+    require(packages, "未找到这台相机的第三方驱动包；"
+                      "请手工把 054C:0E8A 恢复为 USBSTOR 后重试")
+    try:
+        bound = str(property_value(instance,
+                                   "DEVPKEY_Device_DriverInfPath")).lower()
+    except (subprocess.TimeoutExpired, ValueError):
+        bound = ""
+    SCREEN.note_pair(("正在移除这台相机的 Zadig 驱动包（当前绑定 " +
+                      (bound or "未知") + "）：" + ", ".join(packages),
+                      "Removing Zadig packages for this camera (bound " +
+                      (bound or "unknown") + "): " + ", ".join(packages)))
+    ordered = [p for p in packages if p.lower() != bound]
+    ordered += [p for p in packages if p.lower() == bound]
+    for inf in ordered:
+        pnputil("/delete-driver", inf, "/uninstall", timeout=45)
+    for inf in third_party_packages_0e8a():
+        pnputil("/delete-driver", inf, "/force", timeout=45)
+    remaining = third_party_packages_0e8a()
+    removed = [p for p in packages if p not in remaining]
+    failed = remaining
+    time.sleep(1)
+    pnputil("/scan-devices", timeout=60)
+    service = poll_service(serial, timeout=25)
+    if service is not None and service != "USBSTOR":
+        pnputil("/remove-device", instance, timeout=45)
+        service = poll_service(serial, timeout=25)
+    if service is None:
+        confirm("REPLUG", "请拔下 USB 约 10 秒再插回，等待相机进入海量存储连接。")
+        service = poll_service(serial, timeout=30)
+    require(service == "USBSTOR",
+            "普通模式未切回 USBSTOR；当前仍为 " + str(service) +
+            "；已移除 " + (", ".join(removed) or "无") +
+            "；未能移除 " + (", ".join(failed) or "无") +
+            "；请在设备管理器卸载 054C:0E8A 后重试")
+    return service
+
+
 def ensure_storage(serial):
     current, service, instance = pnp()
     require(current == serial, "连接的相机已变化")
-    if service == "WINUSB":
-        inf = property_value(instance, "DEVPKEY_Device_DriverInfPath")
-        require(re.fullmatch(r"oem[0-9]+\.inf", inf, re.I),
-                "只能移除这台相机的 WinUSB 驱动")
-        pnputil("/delete-driver", inf, "/uninstall", timeout=45)
-        current, service, _ = pnp()
-        require(current == serial and service == "USBSTOR",
-                "普通模式未切回 USBSTOR；停止并检查驱动")
+    if service != "USBSTOR":
+        require(service in {"WINUSB", "LIBUSBK", "LIBUSB0"},
+                "相机普通模式驱动不受支持：" + str(service))
+        clear_driver_bindings(serial, instance)
     from windows_storage import volume_identity
     try:
         card, _ = volume_identity(serial)
@@ -293,8 +451,14 @@ def step(state_path, state, key, fn, proof=None):
     bk4_safe_retry = (key == "bk4_201" and proof is not None and
                       not proof.exists() and
                       not any(proof.parent.glob("a7c2-readonly-backup_*.bin")))
+    # A step marked "started" without its receipt never produced a result: the
+    # run died before the side effect was recorded, so retrying the step is
+    # the same operation from scratch. Staging the package to the card is in
+    # that class and used to require hand-editing workflow.json.
+    unfinished_retry = (key == "card" and proof is not None and
+                        not proof.exists())
     require(state.get(key) is None or key in ("build", "p1_capture") or
-            bk4_safe_retry or
+            bk4_safe_retry or unfinished_retry or
             (key in ("version_201", "version_cold") and
              proof is not None and not proof.exists()),
             "上次中断于 " + key + "；需检查记录后继续")
@@ -366,7 +530,8 @@ def main(action="run", language="zh", screen=None):
         return
     require(not state.get("cancelled_and_p1_restored"),
             "此前已取消更新并恢复 p1；这次记录不再继续安装")
-    require(service in ("USBSTOR", "WINUSB"), "相机当前驱动不受支持")
+    require(service in ("USBSTOR", "WINUSB", "LIBUSBK", "LIBUSB0"),
+            "相机当前驱动不受支持：" + str(service))
     if "feature_plan" not in state:
         plan = SCREEN.features()
         feature_package.features(plan["fl23"], plan["audio_mode"])

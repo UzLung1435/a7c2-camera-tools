@@ -39,7 +39,12 @@ START = (1, 0x37FF, 0xD7AA)
 STOP = (1, 0xC800, 0x2855)
 MSC_CLASS = 8
 SERVICE_CLASS = 255
-UNKNOWN_OBSERVATION_SECONDS = 10.0
+# Leaving 0336 passes through an intermediate 096f PID while the camera
+# re-initialises storage. That leg was measured well past 10 s on an A7C II,
+# so a 10 s window reported "not restored" for a camera that was still coming
+# back. The observation is passive and inside the recovery budget, so a longer
+# window costs nothing but a slower honest answer.
+UNKNOWN_OBSERVATION_SECONDS = 30.0
 
 
 class ProbeError(Exception):
@@ -62,6 +67,30 @@ def is_gone(exc):
     # PID/port/native-driver verification is still mandatory.
     return (getattr(exc, "backend_error_code", None) in (-4, -5) or
             getattr(exc, "errno", None) in (2, 19))
+
+
+# Recovery aborts used to reach the log as the single bucket
+# "inherited_probe_constraint", because the sanitised logger may not print
+# exception text. Mapping the known aborts to stable codes keeps the reason
+# visible without leaking any captured bytes.
+RECOVERY_FAILURE_CODES = (
+    ("multiple Sony USB devices", "recovery_ambiguous_devices"),
+    ("service-device attempt limit", "recovery_service_attempt_limit"),
+    ("fresh normal WinUSB instance", "recovery_normal_bind_missing"),
+    ("physical port changed", "recovery_port_changed"),
+    ("port identity unavailable", "recovery_port_identity_pending"),
+    ("transfer-count limit", "recovery_transfer_limit"),
+    ("unexpected USB interface class", "recovery_target_mismatch"),
+    ("unexpected Sony PID", "recovery_target_mismatch"),
+)
+
+
+def recovery_failure_code(exc):
+    message = str(exc)
+    for needle, code in RECOVERY_FAILURE_CODES:
+        if needle in message:
+            return code
+    return None
 
 
 class Budget:
@@ -232,7 +261,18 @@ class ManagedSession:
 
     def stop(self):
         self.backend.log("stop_requested", identity=self.backend.identity(self.info))
-        self.vendorRequestOut(*STOP)
+        try:
+            self.vendorRequestOut(*STOP)
+        except Exception as exc:
+            # PMCA's reference stop() discards a failed control-status phase,
+            # and this camera answers the request with a PIPE stall while still
+            # leaving service mode. Tolerate only that stall, exactly as start()
+            # already does; never a transport loss, which means it really left.
+            if (getattr(exc, "backend_error_code", None) != -9
+                    or getattr(exc, "errno", None) not in (None, 32)):
+                raise
+            self.backend.log("stop_status_stall_accepted",
+                             identity=self.backend.identity(self.info))
         self.backend.log("stop_request_returned",
                          identity=self.backend.identity(self.info))
 
@@ -495,7 +535,11 @@ class UsbBackend:
             self.log("normal_mode_not_verified", reason="recovery deadline")
             return False
         except Exception as exc:
-            self.log("recovery_verification_failed", **error_text(exc))
+            fields = error_text(exc)
+            code = recovery_failure_code(exc)
+            if code:
+                fields["error_code"] = code
+            self.log("recovery_verification_failed", **fields)
             # An unknown/multiple device must never be operated on.
             return False
         finally:
