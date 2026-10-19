@@ -1,0 +1,177 @@
+{
+  "provenance": "Official ILCE-7CM2 2.01 versus tested FL2/FL3 firmware and verified FL2/FL3 playback metadata repair",
+  "app": {
+    "source_sha256": "2ea02f7ecbc5bb917316fe8ef4ce5ffd87eb66efaae78ba2ce11420552df539b",
+    "target_sha256": "e1c1becfb9bc47ebab7f9276a4f505326faa6696feca72a13c82d16398e300f8",
+    "length": 99960744,
+    "spans": [
+      {
+        "offset": 55740400,
+        "new": "24000014",
+        "name": "FL23_converter_entry",
+        "old_sha256": "51f55bc60934aa060895fd0154174ee41415f1e9191cf36b9f702a783ca12bb1",
+        "partition_relative_offset": 686526448,
+        "source_context_size": 132,
+        "source_context_sha256": "440693f98bc55458ac30f9d18fb119cd18e1b109ff8b2dad905bd9ed75ecc099"
+      },
+      {
+        "offset": 55740532,
+        "new": "0000801240000039c0035fd6610100351f440071c00000541f480071e10000548002805240000039c0035fd66002805240000039c0035fd61f400071d1ffff171f2003d51f2003d5",
+        "name": "FL23_converter_cave",
+        "old_sha256": "672d5e3919a220cc30995e5af328602c0a3d9061908c037dc8d86f2d0e1a5b14",
+        "partition_relative_offset": 686526580,
+        "source_context_size": 200,
+        "source_context_sha256": "00c2bcdd09cdd0a7485718bc42f4e91edff1232563e8aa497f6a19e0dcd7c08e"
+      },
+      {
+        "offset": 29074180,
+        "new": "f4031f2a",
+        "name": "FL23_main_callback_1",
+        "old_sha256": "895b220ee0dc31f45d61018d1507ba93124077c261ef7d665f86c1d91e7a7b74",
+        "partition_relative_offset": 657912580,
+        "source_context_size": 132,
+        "source_context_sha256": "8fd332827246c4bdf1913de808567edbd22d40e6064f9f9a3c49bc8b40f7d176"
+      },
+      {
+        "offset": 29074124,
+        "new": "f4031f2a",
+        "name": "FL23_main_callback_2",
+        "old_sha256": "1f4e8eb794d4e72718f58c83495b222fa48fdaf06e0855401c9130be717c43cb",
+        "partition_relative_offset": 657912524,
+        "source_context_size": 132,
+        "source_context_sha256": "d3ff56e831c05fcb57a8d451ab2684e312b922d11f3d321651bf3cf20ec7603c"
+      },
+      {
+        "offset": 29272340,
+        "new": "f4031f2a",
+        "name": "FL23_option_callback_1",
+        "old_sha256": "4ad69de2391aa46bc3e7522b5f4fe899f7394079e77696a3e543401470aef747",
+        "partition_relative_offset": 658111764,
+        "source_context_size": 132,
+        "source_context_sha256": "5c1dc37afc162219daa74ea31060e21623db7c1e45b2c3b44369ace414750765"
+      },
+      {
+        "offset": 29272284,
+        "new": "f4031f2a",
+        "name": "FL23_option_callback_2",
+        "old_sha256": "ef3e61f241e0d2d7c868723dcf84d644dd70ba78846002d1ecaa3783f2d76b1d",
+        "partition_relative_offset": 658111708,
+        "source_context_size": 132,
+        "source_context_sha256": "ec9ba7b5321b60816d6bef5dc98e53a94ddf840b13deff6fce7823d00333d1fb"
+      }
+    ]
+  },
+  "wbi2": {
+    "source_sha256": "db3730c8dbb2de71cfb7a66c343ba8e752e0f374a3a4104196ceac1e9d1b08dc",
+    "target_sha256": "3714a90937e82a99ad4bc88989093dbc46a5a313f35b79aae7a4544644024489",
+    "length": 267171648,
+    "offsets": [
+      35628234,
+      35628418,
+      30065450,
+      30065634
+    ]
+  },
+  "cp": {
+    "source_sha256": "f5a477588698ef965748903b8959a39ce4f59ffd4aee4d4234ef1670f56a1428",
+    "target_sha256": "9f62f29d27e401f2364ac6766a4305bc675c24ef5640925a7873ff9dc2553c18",
+    "length": 18090880,
+    "spans": [
+      {
+        "offset": 699290,
+        "new": "f0b503af4bf2840cc0f2651cdcf8",
+        "old_sha256": "e7ecebbc590bc88b3761fa6cd03d749f87463dabb67021a5c6768c25ec68b3f2"
+      },
+      {
+        "offset": 699305,
+        "new": "c0acf1130cbcf1010f04d80cf1360c6145",
+        "old_sha256": "0a88111852095cae045340ea1f0b279944b2a756a213d9b50107d7489771e159"
+      },
+      {
+        "offset": 699323,
+        "new": "d104399ef13fb5",
+        "old_sha256": "837885c8f8091aeaeb9ec3c3f85a6ff470a415e610b8ba3e49f9b33c9cf9d619"
+      },
+      {
+        "offset": 1279442,
+        "new": "38",
+        "old_sha256": "e52d9c508c502347344d8c07ad91cbd6068afc75ff6292f062a09ca381c89e71"
+      },
+      {
+        "offset": 1279444,
+        "new": "e7e7",
+        "old_sha256": "d4c906dcf11139ddebcc31c344c809706d1faafb38aca3d592a548563f4c36b8"
+      },
+      {
+        "offset": 1279460,
+        "new": "39",
+        "old_sha256": "e77b9a9ae9e30b0dbdb6f510a264ef9de781501d7b6b92ae89eb059c5ab743db"
+      },
+      {
+        "offset": 1279462,
+        "new": "dee7",
+        "old_sha256": "d4c906dcf11139ddebcc31c344c809706d1faafb38aca3d592a548563f4c36b8"
+      },
+      {
+        "offset": 1279580,
+        "new": "e1f288be",
+        "old_sha256": "aa390414fd82a574dbebedf7849d6c9602c15157cfb05a4418412ed915806a62"
+      },
+      {
+        "offset": 1451594,
+        "new": "f0b503af4bf2840cc0f2651cdcf8",
+        "old_sha256": "0947129ad131ccd316f587385e424edb052a7adc16b2290585bdc38be7007bd3"
+      },
+      {
+        "offset": 1451609,
+        "new": "c0acf1130cbcf1010f04d80cf1360c6145",
+        "old_sha256": "0a88111852095cae045340ea1f0b279944b2a756a213d9b50107d7489771e159"
+      },
+      {
+        "offset": 1451627,
+        "new": "d10439e6f03bb6",
+        "old_sha256": "837885c8f8091aeaeb9ec3c3f85a6ff470a415e610b8ba3e49f9b33c9cf9d619"
+      },
+      {
+        "offset": 4301680,
+        "new": "d0b502afd0e9",
+        "old_sha256": "b0f66adc83641586656866813fd9dd0b8ebb63796075661ba45d1aa8089e1d44"
+      },
+      {
+        "offset": 4301687,
+        "new": "3e4af22070c0f26510d0f864091338012802d836301ef52cba1ef568b9",
+        "old_sha256": "11e431c215c5bd334cecbd43148274edf3ffdbd6cd6479fe279577fbe5f52ce6"
+      },
+      {
+        "offset": 6591204,
+        "new": "19f7b1b1",
+        "old_sha256": "b3b2ef89eecebbc0476087fb982fe835e49582dbfbe7c32bd9fde5b752e4e71a"
+      },
+      {
+        "offset": 6592060,
+        "new": "61f6adb2",
+        "old_sha256": "b3b2ef89eecebbc0476087fb982fe835e49582dbfbe7c32bd9fde5b752e4e71a"
+      },
+      {
+        "offset": 1347324,
+        "new": "1529",
+        "old_sha256": "9df9471443da7e774491e46e5e39c12e1644622581b30018efc763aac3944251"
+      },
+      {
+        "offset": 1347328,
+        "new": "4af6e061",
+        "old_sha256": "e67b8d0b2accecd78150f8545d2efdfc9ae28d8c6fa552279de9d2f33643fd6c"
+      },
+      {
+        "offset": 1347334,
+        "new": "c0f2cc01",
+        "old_sha256": "3b6d622ed74b3425c90e006263dc820c646673f795ee08b343d3a814798297c6"
+      },
+      {
+        "offset": 12332768,
+        "new": "ff00000000000000010000000c0000000200000003000000060000000d0000000e0000000f000000040000000500000010000000000000001100000006000000120000001300000014000000150000001600000017000000",
+        "old_sha256": "10eef285deef7a4b7c82b22aa53589b7833df29de3814649c772bbd5c832f365"
+      }
+    ]
+  }
+}

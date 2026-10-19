@@ -1,0 +1,36 @@
+{
+  "format": 1,
+  "camera_access": false,
+  "source_dat4_required": "0x0205",
+  "target_dat4_required": "0x0200",
+  "source_property_sha256": "f6897866e2014a972d17383ea2c6fef4096fc5a3166f348eaff3c60f67a23ba1",
+  "target_property_sha256": "1035933d52e7198f9656181dc2e8242fa90fc95018eba3823a102c669e02f6f2",
+  "workers": [
+    {
+      "source_file": "libcodex_cp_color_block_ro205a.so",
+      "output_file": "libcodex_cp_color_block_ro200.so",
+      "source_sha256": "7f8d8a072df6824938af5e2586353cc9e3b48ee0c07dcfb868b9befdb2f83706",
+      "output_sha256": "bf16bfa2f06fb1a5381cced6c70ff52f3771921ad2e661baf0e96ca21db2cfff",
+      "size": 19768,
+      "version_guard_file_offset": "0xc58",
+      "before_instruction": "cmp w8, #0x205",
+      "after_instruction": "cmp w8, #0x200",
+      "changed_file_offsets": [
+        "0xc59"
+      ]
+    },
+    {
+      "source_file": "libcodex_cp_fl23_color_ram_apply205.so",
+      "output_file": "libcodex_cp_fl23_color_ram_apply200.so",
+      "source_sha256": "98bb261f77dad30d97744dba46f8fabb803633139af4d829a923563b2b0952e6",
+      "output_sha256": "cb340b31cb5fccb564da61c14b03c609e82ba0c901aaf5ee2da541e8a5a8987f",
+      "size": 41296,
+      "version_guard_file_offset": "0x4db0",
+      "before_instruction": "cmp w8, #0x205",
+      "after_instruction": "cmp w8, #0x200",
+      "changed_file_offsets": [
+        "0x4db1"
+      ]
+    }
+  ]
+}

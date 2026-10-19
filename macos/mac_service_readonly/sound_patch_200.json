@@ -1,0 +1,150 @@
+{
+  "format": 1,
+  "feature": "custom_electronic_shutter_sound",
+  "source_package_version": "2.00",
+  "source_package_sha256": "a3076b2bf3b29ffa879bd35904e4002de10e669721b913796025b27bb5e138de",
+  "source_plain_sha256": "aade37951b67c35225b5fe27964793742e00f9fae6f6ec2962e6872c12715f59",
+  "source_cp_partition_sha256": "d6b7142d8028e037705a6bf5543b12d3a63f6402fb49955ad3942693af3a9617",
+  "original_sys_sound_sha256": "5d94c660c48afde364fbb936105abdaf5c35f8bf8fc0bfd6945cd12146f6824a",
+  "audio": {
+    "rate": 24000,
+    "samples_per_frame": 31,
+    "frame_bytes": 32,
+    "control": 5,
+    "peak": 100,
+    "max_seconds": 2
+  },
+  "app_spans": [
+    {
+      "name": "registration_hook",
+      "app_file_offset": 50726164,
+      "partition_relative_offset": 681492756,
+      "old_sha256": "737cb15be551e666d40939b33e3b0644c8648edc3b0830d46977d6f18df3c652",
+      "source_context_size": 132,
+      "source_context_sha256": "6b44276e1609f7c4dcea5dc177e4308d46109b15f34e3b550506446d7d9b910e",
+      "new": "1bfdff17"
+    },
+    {
+      "name": "registration_cave",
+      "app_file_offset": 50723200,
+      "partition_relative_offset": 681489792,
+      "old_sha256": "14c28539f743fb56023f3412db1db3d64a5f4b900b72e6ff19c4730679fa85ca",
+      "source_context_size": 148,
+      "source_context_sha256": "e014bbfc0618790d7101bc5c531e526b9d6e1554cc0b44acbffc702cda1d17bf",
+      "new": "095497d20a6880d22a00a0f2e92b00a9e2020014"
+    },
+    {
+      "name": "only_shutter_menu_a",
+      "app_file_offset": 93882738,
+      "partition_relative_offset": 727441778,
+      "old_sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+      "source_context_size": 130,
+      "source_context_sha256": "6faa9c1e162595f307b3d44386994f562570cc147f9931902ab1d5fa7c634a2c",
+      "new": "0100"
+    },
+    {
+      "name": "only_shutter_menu_b",
+      "app_file_offset": 94289786,
+      "partition_relative_offset": 727849850,
+      "old_sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+      "source_context_size": 130,
+      "source_context_sha256": "890cecc96ffb8a58599c5dfb99d53d51b9d24f49868a9b69f01e67d77ec55462",
+      "new": "0100"
+    },
+    {
+      "name": "other_sounds_menu_a",
+      "app_file_offset": 93882554,
+      "partition_relative_offset": 727441594,
+      "old_sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+      "source_context_size": 130,
+      "source_context_sha256": "3dfcbf4c8120f90792c42b1373280278e752b6ad5bfbadbbde48598220d2f59f",
+      "new": "0100"
+    },
+    {
+      "name": "other_sounds_menu_b",
+      "app_file_offset": 94289602,
+      "partition_relative_offset": 727849666,
+      "old_sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+      "source_context_size": 130,
+      "source_context_sha256": "9c53c4db1cac5ae3c9e082ca75ebf8f39243a14e004d868a494ac68f6652dc31",
+      "new": "0100"
+    },
+    {
+      "name": "only_shutter_callback",
+      "app_file_offset": 28978140,
+      "partition_relative_offset": 657816540,
+      "old_sha256": "1f5cdc21f1af25c333a19413fc43077b22f5051bb87c51811b2decb88033e938",
+      "source_context_size": 132,
+      "source_context_sha256": "4e9a0a83303744e09f013a38a34ec03f66e6d6f39a1e152535646e512f3a0b07",
+      "new": "f4031f2a"
+    },
+    {
+      "name": "other_sounds_callback",
+      "app_file_offset": 28978196,
+      "partition_relative_offset": 657816596,
+      "old_sha256": "72ab1725b8b6a38fde204cdd7ebb8e969ad1a6295a35df5abcbf95ff82b9b6a9",
+      "source_context_size": 132,
+      "source_context_sha256": "8c299a21a926f5623bfbcb459e2fc68bf75c6088b082e3cb9b1263bfc03c0eb7",
+      "new": "f4031f2a"
+    }
+  ],
+  "wbi_spans": [
+    {
+      "name": "only_shutter_menu_a",
+      "partition_relative_offset": 35634034,
+      "old_sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+      "new": "0100"
+    },
+    {
+      "name": "only_shutter_menu_b",
+      "partition_relative_offset": 36278650,
+      "old_sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+      "new": "0100"
+    },
+    {
+      "name": "other_sounds_menu_a",
+      "partition_relative_offset": 35633850,
+      "old_sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+      "new": "0100"
+    },
+    {
+      "name": "other_sounds_menu_b",
+      "partition_relative_offset": 36278466,
+      "old_sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+      "new": "0100"
+    },
+    {
+      "name": "registration_hook",
+      "partition_relative_offset": 127809300,
+      "old_sha256": "737cb15be551e666d40939b33e3b0644c8648edc3b0830d46977d6f18df3c652",
+      "new": "1bfdff17"
+    },
+    {
+      "name": "registration_cave",
+      "partition_relative_offset": 137214848,
+      "old_sha256": "14c28539f743fb56023f3412db1db3d64a5f4b900b72e6ff19c4730679fa85ca",
+      "new": "095497d20a6880d22a00a0f2e92b00a9e2020014"
+    }
+  ],
+  "cp": {
+    "partition_size": 25102336,
+    "sys_sound_original_size": 66368,
+    "sys_sound_first_cluster": 26,
+    "sys_sound_chain_before": [
+      26,
+      27,
+      28,
+      29,
+      30
+    ],
+    "sys_sound_entry_name": "SYSSOUNDBIN",
+    "trigger_partition_offset": 6043082,
+    "trigger_old_sha256": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+    "trigger_new": "03",
+    "append_cluster_pool": [
+      1251,
+      1252,
+      1253
+    ]
+  }
+}
